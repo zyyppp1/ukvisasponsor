@@ -93,4 +93,13 @@
 - 无法在本机自动验证浏览器端 → 用户手动 Load unpacked 测试。
 - 面试题:扩展有哪几部分、什么是 DOM、前端怎么发 HTTP、CORS 是什么为何存在、最小权限原则。
 
-## 阶段 4b:content script 自动抓取 LinkedIn(待做)
+## 阶段 4b:content script 自动抓取 LinkedIn(extension/content.js)
+
+- content_scripts 匹配 linkedin.com/jobs/*,注入 content.js,run_at document_idle。
+- 抓公司名:多选择器兜底(COMPANY_SELECTORS 从上到下试),不押注单一选择器(LinkedIn 类名会变)。
+- 注入 UI:右下角固定徽章(createElement + textContent 防注入),显示 ✓ 持牌/名字/路线/匹配方式,或 ✗ 未找到。
+- SPA 坑:LinkedIn 点职位不刷新页面,content script 只跑一次会漏 → 用 setInterval 每 1.5s 重检测,公司名变了才重查(更高级:MutationObserver / 监听 history)。
+- CORS 复用 4a 给 API 加的头(content script 跑在 linkedin 页面上下文,fetch 我们的 API 属跨源)。
+- 概念:content script(注入页面、隔离世界、读写 DOM)、真实页面 DOM 抓取的脆弱性与多选择器兜底、SPA 重检测、注入 UI 的样式隔离(原版用 Shadow DOM)。
+- 局限:LinkedIn 选择器随版本/页面类型变,可能抓不到 → 需按实际页面调 COMPANY_SELECTORS;徽章是浮层(比原版逐卡片内联简单但没那么贴合)。
+- 面试题:content script vs 页面脚本(隔离世界)、SPA 不刷新怎么办、站点改版怎么扛(多选择器/远程配置)、注入样式怎么不打架(Shadow DOM)。
