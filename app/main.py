@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from matcher.register import Match, SponsorIndex
+from matcher.verify import verify_matches
 
 DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "sponsors.csv"
 
@@ -74,6 +75,8 @@ class SearchResponse(BaseModel):
     query: str
     count: int
     results: list[MatchOut]
+    verified: bool = False                 # 是否经过 LLM 核验
+    verification_reason: str | None = None  # LLM 的一句话理由(或跳过原因)
 
 
 def _to_match_out(m: Match) -> MatchOut:
@@ -95,16 +98,31 @@ def health(index: SponsorIndex = Depends(get_index)):
 def search(
     q: str = Query(..., min_length=1, description="职位页上看到的公司名"),
     limit: int = Query(5, ge=1, le=25, description="最多返回几个候选"),
+    title: str | None = Query(None, description="职位标题(给 LLM 消歧当上下文)"),
+    description: str | None = Query(None, description="职位描述节选(上下文)"),
+    verify: bool = Query(False, description="是否用 LLM 核验模糊匹配(需 ANTHROPIC_API_KEY)"),
     index: SponsorIndex = Depends(get_index),
 ):
     """查一个公司名 -> 返回候选担保方(带分数和匹配方式)。
 
     用 GET:这是一次"只读查询",没有副作用、可重复、可缓存,符合 REST 惯例。
     q 是必填查询参数(?q=Amazon);缺了 FastAPI 会自动回 422。
+    verify=true 时,对模糊匹配用 LLM 结合职位上下文消歧(治 Chalk 那种误报)。
     """
     matches = index.search(q, limit=limit)
+    verified = False
+    reason = None
+    if verify and matches:
+        try:
+            matches, reason = verify_matches(q, matches, title, description)
+            verified = True
+        except Exception as exc:
+            # 无 key / LLM 出错:退回未核验结果(fail-open),不让整个查询挂掉
+            reason = f"verification skipped: {exc.__class__.__name__}"
     return SearchResponse(
         query=q,
         count=len(matches),
         results=[_to_match_out(m) for m in matches],
+        verified=verified,
+        verification_reason=reason,
     )

@@ -111,3 +111,14 @@
 
 - 局限:搜索页取"第一个干净 /company/ 链接",极少数情况可能取到列表项而非选中职位;徽章是浮层(比原版逐卡片内联简单)。
 - 面试题:content script vs 页面脚本(隔离世界)、为什么网络走 background(绕 CSP/CORS)、站点用随机 class 怎么抓(靠结构不靠 class)、SPA 不刷新怎么办、怎么在真实页面上调试(注入 JS 抓 DOM)。
+
+## 阶段 6:LLM 消歧(matcher/verify.py + /search?verify=true)
+
+治的病:字符串匹配把招聘方 "Chalk"(科技公司)错配成 "Chalk Restaurant Ltd"(餐厅)。纯字面无法区分,区别在**上下文**——这正是"字符串做不到、需要 AI"之处。
+- 做法:精确匹配天然高可信、**不核验**;只把**模糊**候选 + 职位标题/描述丢给 Claude,让它判断"哪个候选真是招聘方那家公司,或都不是"。省钱、只在有风险时调。
+- SDK:`client.messages.parse(..., output_format=Pydantic模型)` → `response.parsed_output`(结构化输出,保证合法 JSON)。默认模型 claude-opus-5;可 SPONSOR_VERIFY_MODEL=claude-haiku-4-5 换便宜快的。
+- API:`/search?verify=true&title=...&description=...`;LLM 出错/无 key 时 fail-open 退回未核验结果,不拖垮查询。响应加 verified / verification_reason。
+- 测试:注入假 client 测过滤逻辑(精确保留、模糊按裁决过滤),不真调 API、不花钱(3 个测试)。真实行为靠带 key 的 scripts/verify_demo.py。
+- 概念:LLM API 调用(prompt→结构化输出)、结构化输出(Pydantic schema 保证 JSON)、"传统方法先跑、LLM 只当重排/核验"的成熟架构、key 管理(env 或 profile,不硬编码)、成本/延迟权衡(精确不调、只核验模糊、可选 Haiku)。
+- 面试题:字符串匹配为何治不了 Chalk(上下文缺失)、为什么只核验模糊不核验精确(成本)、结构化输出怎么保证 JSON、key 怎么管、模型怎么选(Opus vs Haiku)。
+- 待接:扩展 content script 目前只传公司名;要让浏览器里也享受消歧,需再抓职位标题/描述并 verify=true(后续)。
