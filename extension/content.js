@@ -1,33 +1,43 @@
-// Content script:注入到 LinkedIn 职位页,自动抓公司名 -> 调 API -> 在页面右下角
-// 注入一个结果徽章。
+// Content script:注入 LinkedIn 职位页,自动抓公司名 -> 请 background 调 API ->
+// 在右下角注入结果徽章。
 //
-// 两个真实难点(面试可讲):
-//  1) LinkedIn 的类名会变、按页面类型不同 —— 所以用"多选择器兜底",不押注单一选择器。
-//  2) LinkedIn 是单页应用(SPA):点不同职位不刷新页面,只换内容 —— 所以不能只跑一次,
-//     要周期性重新检测,公司名变了就重查。
+// 三个真实难点(面试可讲):
+//  1) LinkedIn 新版/语义搜索页的 class 名是随机哈希 -> 不能靠 class,改靠稳定结构:
+//     指向 /company/ 的链接、取文字干净的那个。
+//  2) LinkedIn 是单页应用(SPA):点职位不刷新 -> 周期性重检测,公司名变了才重查。
+//  3) 页面 CSP 会拦截往我们 API 的请求 -> 网络请求交给 background service worker
+//     (隔离于页面、不受页面 CSP/CORS 约束)。
 
-const API = "http://127.0.0.1:8137";
-
-// 公司名的候选选择器(从上到下试,命中即用)。LinkedIn 改版时,加/换这里即可。
-const COMPANY_SELECTORS = [
-  ".job-details-jobs-unified-top-card__company-name a",
-  ".job-details-jobs-unified-top-card__company-name",
-  ".jobs-unified-top-card__company-name a",
-  ".jobs-unified-top-card__company-name",
-  ".artdeco-entity-lockup__subtitle a",
-  ".artdeco-entity-lockup__subtitle",
-];
+function isCleanCompany(t) {
+  if (!t) return false;
+  t = t.trim();
+  if (t.length < 2 || t.length > 80) return false;
+  // 排除关注数、"Show more"、带大数字等噪声
+  if (/followers|following|Show|Premium|·|\d{3,}/i.test(t)) return false;
+  return true;
+}
 
 function detectCompany() {
-  for (const sel of COMPANY_SELECTORS) {
+  // 1) 经典职位详情页:稳定 class 选择器(存在就优先用)
+  const classSelectors = [
+    ".job-details-jobs-unified-top-card__company-name a",
+    ".jobs-unified-top-card__company-name a",
+    ".artdeco-entity-lockup__subtitle a",
+  ];
+  for (const sel of classSelectors) {
     const el = document.querySelector(sel);
-    const text = el && el.textContent.trim();
-    if (text && text.length > 1) return text;
+    const t = el && el.textContent.trim();
+    if (isCleanCompany(t)) return t.replace(/\s+/g, " ");
+  }
+  // 2) 新版/语义搜索页:class 随机哈希,改用结构 —— 第一个文字干净的 /company/ 链接
+  for (const a of document.querySelectorAll("a[href*='/company/']")) {
+    const t = (a.textContent || "").trim().replace(/\s+/g, " ");
+    if (isCleanCompany(t)) return t;
   }
   return null;
 }
 
-// —— 徽章(只创建一次,固定在右下角)——
+// —— 徽章(只创建一次,固定右下角)——
 let badge = null;
 function ensureBadge() {
   if (badge && badge.isConnected) return badge;
@@ -44,7 +54,13 @@ function ensureBadge() {
   return badge;
 }
 
-// 用 textContent 拼元素,避免把数据当 HTML 注入(安全习惯)
+function header(company) {
+  const h = document.createElement("div");
+  h.textContent = `Visa sponsorship · ${company}`;
+  Object.assign(h.style, { fontWeight: "700", fontSize: "12px", color: "#012a40" });
+  return h;
+}
+
 function row(tickText, tickColor, boldText, metaText) {
   const r = document.createElement("div");
   r.style.marginTop = "6px";
@@ -65,15 +81,6 @@ function row(tickText, tickColor, boldText, metaText) {
   return r;
 }
 
-function header(company) {
-  const h = document.createElement("div");
-  h.textContent = `Visa sponsorship · ${company}`;
-  h.style.fontWeight = "700";
-  h.style.fontSize = "12px";
-  h.style.color = "#012a40";
-  return h;
-}
-
 function renderLoading(company) {
   const el = ensureBadge();
   el.textContent = "";
@@ -89,7 +96,6 @@ function renderResult(company, data) {
   const el = ensureBadge();
   el.textContent = "";
   el.appendChild(header(company));
-
   if (!data.results.length) {
     el.appendChild(row("✗", "#b91c1c", "No licensed sponsor found", "Not in the Home Office register."));
     return;
@@ -103,22 +109,23 @@ function renderResult(company, data) {
   }
 }
 
-async function check(company) {
+function check(company) {
   renderLoading(company);
-  try {
-    const resp = await fetch(`${API}/search?q=${encodeURIComponent(company)}&limit=3`);
-    if (!resp.ok) {
-      ensureBadge().textContent = `Sponsor check error: HTTP ${resp.status}`;
+  // 交给 background service worker 去发请求(绕开页面 CSP/CORS)
+  chrome.runtime.sendMessage({ type: "search", company }, (resp) => {
+    if (chrome.runtime.lastError) {
+      ensureBadge().textContent = "Sponsor checker: background error.";
       return;
     }
-    renderResult(company, await resp.json());
-  } catch (err) {
-    ensureBadge().textContent = "Sponsor checker: can't reach the API (is it running on 127.0.0.1:8137?)";
-  }
+    if (!resp || !resp.ok) {
+      ensureBadge().textContent = "Sponsor checker: can't reach the API (is uvicorn running on 127.0.0.1:8137?)";
+      return;
+    }
+    renderResult(company, resp.data);
+  });
 }
 
-// SPA 兜底:每 1.5s 看当前职位的公司名变了没,变了就重查。
-// (更"高级"的做法是 MutationObserver 或监听 history 变化,这里先用最简单可靠的轮询。)
+// SPA 兜底:每 1.5s 看当前公司名变了没,变了才重查。
 let lastCompany = null;
 function tick() {
   const company = detectCompany();

@@ -93,13 +93,21 @@
 - 无法在本机自动验证浏览器端 → 用户手动 Load unpacked 测试。
 - 面试题:扩展有哪几部分、什么是 DOM、前端怎么发 HTTP、CORS 是什么为何存在、最小权限原则。
 
-## 阶段 4b:content script 自动抓取 LinkedIn(extension/content.js)
+## 阶段 4b:content script 自动抓取 LinkedIn(extension/content.js + background.js)
 
-- content_scripts 匹配 linkedin.com/jobs/*,注入 content.js,run_at document_idle。
-- 抓公司名:多选择器兜底(COMPANY_SELECTORS 从上到下试),不押注单一选择器(LinkedIn 类名会变)。
-- 注入 UI:右下角固定徽章(createElement + textContent 防注入),显示 ✓ 持牌/名字/路线/匹配方式,或 ✗ 未找到。
-- SPA 坑:LinkedIn 点职位不刷新页面,content script 只跑一次会漏 → 用 setInterval 每 1.5s 重检测,公司名变了才重查(更高级:MutationObserver / 监听 history)。
-- CORS 复用 4a 给 API 加的头(content script 跑在 linkedin 页面上下文,fetch 我们的 API 属跨源)。
-- 概念:content script(注入页面、隔离世界、读写 DOM)、真实页面 DOM 抓取的脆弱性与多选择器兜底、SPA 重检测、注入 UI 的样式隔离(原版用 Shadow DOM)。
-- 局限:LinkedIn 选择器随版本/页面类型变,可能抓不到 → 需按实际页面调 COMPANY_SELECTORS;徽章是浮层(比原版逐卡片内联简单但没那么贴合)。
-- 面试题:content script vs 页面脚本(隔离世界)、SPA 不刷新怎么办、站点改版怎么扛(多选择器/远程配置)、注入样式怎么不打架(Shadow DOM)。
+真实页面上从"没反应"到跑通的完整调试过程(极好的面试故事):
+
+**问题 1:class 选择器全失效。** LinkedIn 语义搜索页(/jobs/search-results/?currentJobId=)的 class 是**随机哈希**(fed23a02 这种),我原来那套 `.jobs-unified-top-card__company-name` 一个都命不中。
+- **定位手段**:用 AppleScript 驱动本机 Chrome,在真实标签页里执行 JS 抓 DOM(比让用户手动 Inspect 高效)。
+- **修法**:不靠会变的 class,改靠**稳定结构** —— 取第一个文字干净的 `a[href*="/company/"]` 链接(isCleanCompany 过滤掉 followers/Show/大数字)。实测正确取到 "Hunter Bond"。
+
+**问题 2:fetch 被 CSP 拦(Failed to fetch)。** API 明明在跑,但从页面发请求失败。
+- **原因**:我用 AppleScript 注入的 fetch 跑在**页面主世界**,受 LinkedIn 的 **CSP(connect-src)** 约束,不许连 127.0.0.1。
+- **关键认知**:content script 跑在**隔离世界**,其 fetch 不受页面 CSP 约束;但为彻底稳妥(CSP + CORS 都绕开),把网络请求交给 **background service worker**(靠 host_permissions,独立于页面)。这才是 MV3 里"从扩展发跨源请求"的规范位置。
+
+**最终架构**:content.js(检测 + 注入徽章 + sendMessage)→ background.js(fetch API)→ 回传渲染。
+- SPA 兜底:setInterval 每 1.5s 重检测,公司名变了才重查。
+- 结果:真实 LinkedIn 页验证通过 —— "Hunter Bond" → 精确命中 "HUNTER BOND LIMITED"(归一化端到端生效)。
+
+- 局限:搜索页取"第一个干净 /company/ 链接",极少数情况可能取到列表项而非选中职位;徽章是浮层(比原版逐卡片内联简单)。
+- 面试题:content script vs 页面脚本(隔离世界)、为什么网络走 background(绕 CSP/CORS)、站点用随机 class 怎么抓(靠结构不靠 class)、SPA 不刷新怎么办、怎么在真实页面上调试(注入 JS 抓 DOM)。
