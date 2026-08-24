@@ -55,6 +55,17 @@
 - **意外收获**:精确匹配天然消除了阶段 0 的 Revolut→"Revolution..." 误命中(准确率提升,零额外代码)。
 - **局限**:全等匹配对"多词/少词"无能为力——"Amazon"(太少词)和"J.P. Morgan"(名单里多了 Securities)仍 0 命中 → 召回率问题 → 引出 1c 模糊匹配。
 
+### 1c 模糊匹配(matcher/register.py: search)
+精确对不上时的兜底。经过真实数据横评得出的关键结论:**单一打分器无法兼顾准确率和召回率**。
+- token_set_ratio:召回高,但只共享一个词就冲高分(j p morgan 误配 morgan lewis)→ 准确率差。
+- WRatio:换一种垃圾——字符子串误配(amazon→AZO、deloite→ITE)。
+- token_sort_ratio/ratio:准确率高,但漏掉"少词查询"(Amazon 返回空)。
+**最终方案(组合):token_set_ratio 宽召回 + 查询词覆盖率闸门(词级阈值80、覆盖0.7)保准确。**
+- 效果:Google/Revolut 走精确(0ms,且天然无 Revolution 误配);Amazon→3 个 Amazon 实体、Barclays→3 个 Barclays 实体(模糊,~60ms);Deloite 拼写错误→Deloitte;J.P. Morgan→0(正确,该行本就没持牌)。
+- 性能:精确 O(1) 0ms;模糊 O(n) 扫 12 万键 ~60ms → 所以"精确优先、模糊兜底"。模糊要扩展得靠 trigram 索引/分块(阶段 3 Postgres)。
+- 已知局限(诚实记录):极端换位拼写(Wies→Wise 仅75分)会漏;个别近形词(Onzo↔Monzo)低排名混入 → 彻底解决靠语义匹配 embeddings(阶段 6)。
+- score/coverage 两个旋钮 = 准确率 vs 召回率的业务权衡,无完美值。
+
 ### 数据处理进度(诚实盘点)
 磁盘上 CSV 仍是原始未改动;所有处理都是运行时内存里做的(字段 strip + 公司名归一化建键),未落盘、未入库。管道坐标:抽取✅ / 转换🟡(仅内存、仅公司名)/ 校验·去重落盘·入库⬜。真正 ETL 在阶段 3 + DE 层。
 
