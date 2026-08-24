@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { width: 300px; margin: 0; padding: 14px; font-family: -apple-system, "Segoe UI", Arial, sans-serif; color: #012a40; }
+    h1 { font-size: 14px; margin: 0 0 10px; }
+    .bar { display: flex; gap: 6px; }
+    #q { flex: 1; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
+    #go { padding: 8px 12px; border: none; border-radius: 6px; background: #012a40; color: #fff; font-size: 13px; cursor: pointer; }
+    #results { margin-top: 12px; font-size: 13px; }
+    .row { padding: 8px 10px; border: 1px solid #eceff5; border-radius: 8px; margin-bottom: 6px; }
+    .ok { color: #059669; font-weight: 700; }
+    .meta { color: #64748b; font-size: 11px; }
+    .hint { color: #94a3b8; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>UK Visa Sponsor Checker</h1>
+  <div class="bar">
+    <input id="q" type="text" placeholder="e.g. Amazon, Monzo, Deloitte" autofocus>
+    <button id="go">Check</button>
+  </div>
+  <div id="results"><span class="hint">Type a company name and press Check.</span></div>
+  <!-- 脚本必须外链:MV3 的内容安全策略禁止 HTML 里的内联 JS -->
+  <script src="popup.js"></script>
+</body>
+</html>

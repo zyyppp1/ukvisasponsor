@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from matcher.register import Match, SponsorIndex
@@ -31,6 +32,15 @@ app = FastAPI(
     title="UK Visa Sponsor Checker API",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+# CORS:浏览器默认禁止网页/扩展调用"别的源"的接口(安全机制)。这里放行,
+# 让 Chrome 扩展能调本 API。开发期用 "*" 全放行;上线应收紧到具体来源。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
 )
 
 

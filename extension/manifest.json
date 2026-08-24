@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "UK Visa Sponsor Checker (dev)",
+  "version": "0.1.0",
+  "description": "Check whether a UK company can sponsor a Skilled Worker visa.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Sponsor Checker"
+  },
+  "host_permissions": [
+    "http://127.0.0.1:8137/*"
+  ]
+}

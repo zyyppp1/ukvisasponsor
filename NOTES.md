@@ -82,3 +82,15 @@
 - 概念:HTTP 请求/响应、GET vs POST、状态码(200/422/503)、查询参数、JSON;API/端点/REST 解耦后端与调用方;FastAPI 把函数变端点 + 自动校验 + 自动文档。
 - 待打磨(留后面):① limit 现按"记录条数"算,同公司多路线(如 Amazon UK Services 有 3 行 = 3 条路线)会占名额 → 应按公司去重、聚合路线;② 分数四舍五入。
 - 面试题:HTTP/REST 是什么、GET vs POST、为何启动时建索引、如何测 API(TestClient + 依赖替换)、422/503 含义。
+
+## 阶段 4a:最小 Chrome 扩展 —— 弹窗调 API(extension/)
+
+- MV3。三个文件:manifest.json(ID+权限声明)、popup.html(弹窗 UI)、popup.js(fetch 调 API + 渲染)。
+- 只申请 host_permissions: http://127.0.0.1:8137/*(最小权限,对比原版注入所有站点)。
+- API 加了 CORSMiddleware:浏览器默认禁跨源,服务端返回 access-control-allow-origin 才放行(curl 验证 `*` 已返回)。
+- 概念:扩展结构(manifest/popup/content script/service worker)、DOM(document.getElementById/createElement)、前端 HTTP(fetch + async/await,相当于 Python 的 requests)、CORS(同源策略 + 服务端 opt-in)。
+- 注意:popup 是扩展页,靠 host_permissions 可绕过 CORS;4b 的 content script 跑在 LinkedIn 页面上下文里,受 CORS 约束 → 所以现在给 API 加 CORS 是为 4b 铺路;最规范的做法是网络请求走 background service worker(不受页面 CORS 限制)。
+- 无法在本机自动验证浏览器端 → 用户手动 Load unpacked 测试。
+- 面试题:扩展有哪几部分、什么是 DOM、前端怎么发 HTTP、CORS 是什么为何存在、最小权限原则。
+
+## 阶段 4b:content script 自动抓取 LinkedIn(待做)
