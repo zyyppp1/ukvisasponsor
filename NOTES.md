@@ -122,3 +122,23 @@
 - 概念:LLM API 调用(prompt→结构化输出)、结构化输出(Pydantic schema 保证 JSON)、"传统方法先跑、LLM 只当重排/核验"的成熟架构、key 管理(env 或 profile,不硬编码)、成本/延迟权衡(精确不调、只核验模糊、可选 Haiku)。
 - 面试题:字符串匹配为何治不了 Chalk(上下文缺失)、为什么只核验模糊不核验精确(成本)、结构化输出怎么保证 JSON、key 怎么管、模型怎么选(Opus vs Haiku)。
 - 待接:扩展 content script 目前只传公司名;要让浏览器里也享受消歧,需再抓职位标题/描述并 verify=true(后续)。
+
+## 阶段 3:Postgres 持久化(db/ + scripts/)
+
+### 环境:本地 Docker Postgres
+`docker run --name uvsc-pg -e POSTGRES_PASSWORD=devpass -e POSTGRES_DB=ukvisasponsor -p 5433:5432 -v uvsc-pgdata:/var/lib/postgresql/data -d postgres:16`
+连接串:postgresql+psycopg://postgres:devpass@localhost:5433/ukvisasponsor。镜像/容器/数据卷三层:删容器不丢数据(卷独立)。
+
+### 第1步 建表(db/models.py, db/database.py)
+- SQLAlchemy ORM:Python 类 SponsorRow ↔ 表 sponsors;create_all 生成 CREATE TABLE。ORM = Python↔SQL 翻译器,防注入(参数化查询)、连接池、跨库。
+- normalized_name 建 btree 索引(= 内存字典的持久化版)。
+
+### 第2步 ETL 灌数据(scripts/load_data.py)
+- 幂等:TRUNCATE 再灌,重复跑不重复。批量插入:每 10000 行一批(vs 逐行 14 万次往返)。事务:一个 session + commit,整批原子落库(ACID 的 A)。
+- 结果:142,905 行,~2.9s。管道:抽取(下载)→转换(strip+归一化)→加载(批量入库)= 真正的 ETL。数据现在**持久化**了。
+- EXPLAIN 实测:normalized_name(索引)Index Scan 0.7ms vs organisation_name(无索引)Seq Scan 34ms → **约 48 倍**,O(log n) vs O(n) 落到数字。
+
+### 面试题
+- Docker:镜像/容器/卷、为什么用容器(可复现、隔离、贴近生产)、端口映射、卷持久化。
+- 数据库:schema/主键/索引、B树怎么加速(排序+平衡树,矮树少寻道)、索引 vs 内存字典(持久化/增量维护)、ORM 是什么、参数化查询防注入。
+- ETL:事务/ACID、幂等怎么做、批量插入 vs 逐行、怎么确认索引生效(EXPLAIN ANALYZE 看 Index Scan vs Seq Scan)。
