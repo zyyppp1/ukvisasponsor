@@ -1,0 +1,6 @@
+# Core matcher + tests
+rapidfuzz>=3.0
+pytest>=8.0
+
+# Data download / pipeline
+requests>=2.31
