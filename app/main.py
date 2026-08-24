@@ -22,9 +22,18 @@ _index: SponsorIndex | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """服务器生命周期钩子:启动时建索引(一次,O(n)),关闭时释放。"""
+    """服务器生命周期钩子:启动时建索引(一次,O(n)),关闭时释放。
+
+    优先从 Postgres 加载(持久化数据源);连不上时退回读 CSV,保证本地/无库时也能起。
+    """
     global _index
-    _index = SponsorIndex.from_csv(DATA_PATH)
+    try:
+        from db.index_loader import load_index_from_db
+        _index = load_index_from_db()
+        print(f"[startup] index loaded from Postgres ({len(_index):,} rows)")
+    except Exception as exc:
+        _index = SponsorIndex.from_csv(DATA_PATH)
+        print(f"[startup] DB unavailable ({exc.__class__.__name__}); loaded from CSV ({len(_index):,} rows)")
     yield          # yield 之前 = 启动;之后 = 关闭
     _index = None
 

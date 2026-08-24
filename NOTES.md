@@ -142,3 +142,9 @@
 - Docker:镜像/容器/卷、为什么用容器(可复现、隔离、贴近生产)、端口映射、卷持久化。
 - 数据库:schema/主键/索引、B树怎么加速(排序+平衡树,矮树少寻道)、索引 vs 内存字典(持久化/增量维护)、ORM 是什么、参数化查询防注入。
 - ETL:事务/ACID、幂等怎么做、批量插入 vs 逐行、怎么确认索引生效(EXPLAIN ANALYZE 看 Index Scan vs Seq Scan)。
+
+### 第3步 API 读 Postgres(db/index_loader.py + app 的 lifespan)
+- 启动时优先从 Postgres 建索引(load_index_from_db),连不上退回 CSV。保留内存匹配器,只换数据源(API 边界让存储与匹配解耦)。
+- API 怎么连 Docker 库:API 在宿主机跑,连 localhost:5433(-p 5433:5432 把容器端口发布到本机)。若 API 也进容器,则要用容器名+共享网络(阶段 5)。
+- 证明读的是 DB:往库插一条 CSV 没有的行 → /health 142906 且能查到。
+- 排错教训:旧 uvicorn 一直占着 8137 端口,新进程起不来 → "改动没生效先查残留旧进程/端口占用"。
