@@ -71,3 +71,14 @@
 
 ### 面试串词
 归一化 + 精确匹配 = 高准确率、低召回率;模糊匹配用"牺牲一点准确率换召回率"来补;两者叠加 = 完整匹配器。字典 O(1) vs 遍历 O(n);建一次查多次(build once, serve many);数据日更靠重启重建或热刷新,阶段 3 入库后变持久化索引 + 增量维护。
+
+## 阶段 2:HTTP API(app/main.py)
+
+- FastAPI + uvicorn。索引在 lifespan **启动时建一次**、常驻内存(/health 显示 142905 条即证据)。
+- 端点:`GET /search?q=&limit=`(只读查询用 GET)、`GET /health`。
+- Pydantic 响应模型(SponsorOut/MatchOut/SearchResponse)→ 自动序列化 JSON + 自动生成 /docs 交互文档。
+- 依赖注入 get_index + Depends → 测试用 dependency_overrides 换成小索引(快、稳,不加载 14 万行)。
+- 真实 curl 验证:/health 200、/search 返 JSON、缺 q 自动 422、/docs 200。测试新增 test_api.py(TestClient),共 26 个全绿。
+- 概念:HTTP 请求/响应、GET vs POST、状态码(200/422/503)、查询参数、JSON;API/端点/REST 解耦后端与调用方;FastAPI 把函数变端点 + 自动校验 + 自动文档。
+- 待打磨(留后面):① limit 现按"记录条数"算,同公司多路线(如 Amazon UK Services 有 3 行 = 3 条路线)会占名额 → 应按公司去重、聚合路线;② 分数四舍五入。
+- 面试题:HTTP/REST 是什么、GET vs POST、为何启动时建索引、如何测 API(TestClient + 依赖替换)、422/503 含义。

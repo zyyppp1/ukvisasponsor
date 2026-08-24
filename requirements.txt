@@ -4,3 +4,8 @@ pytest>=8.0
 
 # Data download / pipeline
 requests>=2.31
+
+# Web API (phase 2)
+fastapi>=0.110
+uvicorn>=0.27
+httpx>=0.27   # FastAPI TestClient 需要它
